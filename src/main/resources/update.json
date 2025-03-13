@@ -1,0 +1,21 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Generated schema for Root",
+    "type": "object",
+    "properties": {
+        "insert": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+        },
+        "update": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+        }
+    },
+    "required": [
+        "insert",
+        "update"
+    ]
+}

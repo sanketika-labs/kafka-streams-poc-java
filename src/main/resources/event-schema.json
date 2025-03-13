@@ -1,0 +1,19 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Operation Type Schema",
+    "description": "JSON Schema that only validates the dm_operation_type field and ignores all other fields",
+    "type": "object",
+    "required": [
+        "dm_operation_type"
+    ],
+    "properties": {
+        "dm_operation_type": {
+            "type": "string",
+            "description": "The database operation type",
+            "enum": [
+                "I", "U"
+            ]
+        }
+    },
+    "additionalProperties": true
+}
