@@ -14,7 +14,7 @@ public class Canonicalizer {
         Map<String, Object> input = event;
 
         if ("a".equalsIgnoreCase(operationType)) {
-            Object updateObj = event.get("update");
+            Object updateObj = event.getOrDefault("update", new HashMap<>());
             if (updateObj instanceof Map) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> updateMap = (Map<String, Object>) updateObj;
@@ -36,9 +36,9 @@ public class Canonicalizer {
         return Map.entry(cdcMeta, payload);
     }
 
-    private static ProcessingResult transform(String record) {
+    private static ProcessingResult transform(ProcessingResult record) {
         try {
-            Map<String, Object> event = JsonUtil.deserializeJson(record);
+            Map<String, Object> event = JsonUtil.deserializeJson(record.getPayload());
             String operationType = CommonUtil.getOperationType(event);
             Map.Entry<Map<String, Object>, Map<String, Object>> processedEvent = splitCdcMetaAndPayload(event, operationType);
 
@@ -47,31 +47,24 @@ public class Canonicalizer {
 
             String tableName = CommonUtil.getTableName(cdcMeta);
 
-            PipelineMeta pipelineMeta = new PipelineMeta(System.currentTimeMillis(), 200);
-            CanonicalEvent canonicalEvent = new CanonicalEvent(tableName, cdcMeta, payload, pipelineMeta);
+            CanonicalEvent canonicalEvent = new CanonicalEvent(tableName, cdcMeta, payload);
 
-            JsonUtil.Either<Throwable, String> result = JsonUtil.serialize(canonicalEvent);
-            if (result.isRight()) {
-                // Create metadata for the processing result
-                Map<String, Object> metadata = new HashMap<>();
-                metadata.put("operationType", operationType);
-                metadata.put("tableName", tableName);
+            Map<String, Object> metadata = new HashMap<>(record.getMetadata() != null ? record.getMetadata() : new HashMap<>());
+            metadata.put("operationType", operationType);
+            metadata.put("canonicalEvent", canonicalEvent);
 
-                return new ProcessingResult(result.right(), true, null, metadata);
-            } else {
-                throw (Exception) result.left();
-            }
+            return new ProcessingResult(record.getPayload(), true, null, metadata);
         } catch (Exception e) {
             e.printStackTrace();
-            ErrorEvent failedEvent = new ErrorEvent(record, ErrorConstants.TRANSFORMATION_FAILED);
-            return new ProcessingResult(record, false, failedEvent);
+            ErrorEvent failedEvent = new ErrorEvent(record.getPayload(), ErrorConstants.TRANSFORMATION_FAILED);
+            return new ProcessingResult(record.getPayload(), false, failedEvent);
         }
     }
 
     public static KStream<String, ProcessingResult>[] process(KStream<String, ProcessingResult> stream) {
         return stream
                 .filter((key, value) -> value.isSuccess())
-                .mapValues(result -> transform(result.getPayload()))
+                .mapValues(Canonicalizer::transform)
                 .branch(
                         (key, value) -> value.isSuccess(),
                         (key, value) -> !value.isSuccess()

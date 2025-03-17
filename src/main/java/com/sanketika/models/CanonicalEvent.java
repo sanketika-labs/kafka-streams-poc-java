@@ -11,6 +11,13 @@ public class CanonicalEvent {
     public CanonicalEvent() {
     }
 
+    public CanonicalEvent(String table_name, Map<String, Object> cdc_meta, Map<String, Object> payload) {
+        this.table_name = table_name;
+        this.cdc_meta = cdc_meta;
+        this.payload = payload;
+        this.pipeline_meta = null;
+    }
+
     public CanonicalEvent(String table_name, Map<String, Object> cdc_meta, Map<String, Object> payload, PipelineMeta pipeline_meta) {
         this.table_name = table_name;
         this.cdc_meta = cdc_meta;

@@ -1,6 +1,7 @@
 package com.sanketika.util;
 
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 public class CommonUtil {
 
@@ -29,7 +30,9 @@ public class CommonUtil {
         return tableName != null ? tableName.toString() : "";
     }
 
-    public static void peek(String key, String value) {
-        System.out.println("[DEBUG] Key: " + key + ", Value: " + value);
+    public static BiConsumer<String, String> peek(String result) {
+        return (key, value) -> {
+            System.out.println("[" + result + " Branch] Key: " + key + ", Value: " + value);
+        };
     }
 }

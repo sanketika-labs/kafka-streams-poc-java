@@ -11,7 +11,8 @@
             "type": "string",
             "description": "The database operation type",
             "enum": [
-                "I", "U"
+                "I",
+                "D"
             ]
         }
     },

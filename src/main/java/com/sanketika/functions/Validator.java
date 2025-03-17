@@ -17,6 +17,7 @@ import org.apache.kafka.streams.kstream.KStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -113,7 +114,9 @@ public class Validator {
 
         if (schema != null) {
             if (validateWithSchema(record, schema, schemaName)) {
-                return new ProcessingResult(record, true, null);
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("preprocessor_start", System.currentTimeMillis());
+                return new ProcessingResult(record, true, null, metadata);
             } else {
                 ErrorEvent errorEvent = new ErrorEvent(record, ErrorConstants.SCHEMA_VALIDATION_FAILED);
                 return new ProcessingResult(record, false, errorEvent);
