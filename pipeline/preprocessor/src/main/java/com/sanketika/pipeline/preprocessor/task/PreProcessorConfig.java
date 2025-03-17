@@ -7,10 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -27,8 +24,8 @@ public class PreProcessorConfig {
     public static final int kafkaNumThreads = getIntOrElse("kafka.numThreads", 1);
 
     // Topic configuration
-    public static final String inputTopic = getStringOrElse("kafka.topics.input", "input-default");
-    public static final String outputTopic = getStringOrElse("kafka.topics.output", "output-default");
+    public static final List<String> inputTopics = getStringListOrElse("kafka.topics.inputs", Collections.singletonList("input-default"));
+    public static final String outputSuffix = getStringOrElse("kafka.topics.output_suffix", "_canonical");
     public static final String failedTopic = getStringOrElse("kafka.topics.failed", "failed-default");
 
     // Schema configuration
@@ -76,6 +73,27 @@ public class PreProcessorConfig {
             // Fall back to default
         }
         return defaultValue;
+    }
+
+    private static List<String> getStringListOrElse(String path, List<String> defaultValue) {
+        try {
+            if (config.hasPath(path)) {
+                return config.getStringList(path);
+            }
+        } catch (ConfigException e) {
+            // Fall back to default
+            logger.error("Error reading list from config: {}", e.getMessage());
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Gets the output topic name for a given input topic by appending the configured suffix
+     * @param inputTopic the input topic name
+     * @return the corresponding output topic name
+     */
+    public static String getOutputTopicForInput(String inputTopic) {
+        return inputTopic + outputSuffix;
     }
 
     private static Config loadConfig() {

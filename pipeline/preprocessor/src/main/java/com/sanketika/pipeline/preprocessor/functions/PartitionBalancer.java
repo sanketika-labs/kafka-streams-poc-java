@@ -16,6 +16,7 @@ import java.util.Map;
 public class PartitionBalancer {
     private static final Logger logger = LoggerFactory.getLogger(PartitionBalancer.class);
 
+    // TODO: Implement the mapKey method to read from eachtable primary key mapping
     public static String mapKey(String key, ProcessingResult record) {
         if (record.getMetadata() == null) {
             return key;
@@ -44,7 +45,7 @@ public class PartitionBalancer {
             long timeTaken = preprocessorEnd - preprocessorStart;
 
             PipelineMeta pipelineMeta = new PipelineMeta(preprocessorStart, timeTaken);
-            canonicalEvent.setPipeline_meta(pipelineMeta);
+            canonicalEvent.setPipelineMeta(pipelineMeta);
 
             JsonUtil.Either<Throwable, String> result = JsonUtil.serialize(canonicalEvent);
             if (result.isRight()) {

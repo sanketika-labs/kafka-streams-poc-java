@@ -1,5 +1,8 @@
 package com.sanketika.pipeline.preprocessor.task;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sanketika.common.models.CanonicalEvent;
 import com.sanketika.common.models.ErrorEvent;
 import com.sanketika.common.models.ProcessingResult;
 import com.sanketika.common.util.JsonUtil;
@@ -19,10 +22,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
+import java.util.Map;
 
 public class PreprocessorTask {
     private static final Logger logger = LoggerFactory.getLogger(PreprocessorTask.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     public static void main(String[] args) {
         // First make sure we see something with System.out
@@ -30,12 +37,6 @@ public class PreprocessorTask {
 
         // Configure Logback
         LogbackConfigurer.configureLogback();
-
-        // Test logging immediately after configuration
-        // System.out.println("Testing logs after Logback configuration...");
-        // logger.info("TEST INFO LOG - If you see this, logging is working");
-        // logger.debug("TEST DEBUG LOG - If you see this, debug logging is enabled");
-        // logger.error("TEST ERROR LOG - Should always be visible");
 
         try {
             Properties props = createKafkaProperties();
@@ -61,7 +62,8 @@ public class PreprocessorTask {
             try {
                 streams.cleanUp(); // Clean local state stores before starting
                 streams.start();
-                logger.info("Kafka Streams application started, listening for messages on topic: {}", PreProcessorConfig.inputTopic);
+                logger.info("Kafka Streams application started, listening for messages on topics: {}",
+                    String.join(", ", PreProcessorConfig.inputTopics));
             } catch (Exception e) {
                 logger.error("Error during streams execution: {}", e.getMessage(), e);
                 streams.close(Duration.ofMinutes(1));
@@ -99,41 +101,95 @@ public class PreprocessorTask {
     }
 
     private static void buildStreamsTopology(StreamsBuilder builder) {
-        String inputTopic = PreProcessorConfig.inputTopic;
-
-        // Explicitly specify serdes for input topic
-        KStream<String, String> sourceStream = builder.stream(
-            inputTopic,
-            Consumed.with(Serdes.String(), Serdes.String())
-        );
-
-        KStream<String, ProcessingResult>[] validatorBranchedStreams = Validator.process(sourceStream);
-        KStream<String, ProcessingResult> validatorSuccessStream = validatorBranchedStreams[0];
-        KStream<String, ProcessingResult> validatorFailureStream = validatorBranchedStreams[1];
-
-        KStream<String, ProcessingResult>[] canonicalizerBranchedStreams = Canonicalizer.process(validatorSuccessStream);
-        KStream<String, ProcessingResult> canonicalizerSuccessStream = canonicalizerBranchedStreams[0];
-        KStream<String, ProcessingResult> canonicalizerFailureStream = canonicalizerBranchedStreams[1];
-
-        KStream<String, ProcessingResult> partitionBalancerBranchedStream = PartitionBalancer.process(canonicalizerSuccessStream);
-
-        sinkEvents(partitionBalancerBranchedStream);
-        processFailedStreams(new KStream[]{validatorFailureStream, canonicalizerFailureStream});
+        List<String> inputTopics = PreProcessorConfig.inputTopics;
+        List<KStream<String, ProcessingResult>> allFailedStreams = new ArrayList<>();
 
         // Log topology for debugging
-        logger.info("Built the following topology:");
-        logger.info("Input topic: {}", inputTopic);
-        logger.info("Output topic: {}", PreProcessorConfig.outputTopic);
+        logger.info("Building topology for {} input topics", inputTopics.size());
+        logger.info("Input topics: {}", String.join(", ", inputTopics));
+        logger.info("Output suffix: {}", PreProcessorConfig.outputSuffix);
         logger.info("Failed topic: {}", PreProcessorConfig.failedTopic);
+
+        // Process each input topic
+        for (String inputTopic : inputTopics) {
+            String defaultOutputTopic = PreProcessorConfig.getOutputTopicForInput(inputTopic);
+
+            logger.info("Setting up processing pipeline: {} -> {} (default)", inputTopic, defaultOutputTopic);
+
+            // Explicitly specify serdes for input topic
+            KStream<String, String> sourceStream = builder.stream(
+                inputTopic,
+                Consumed.with(Serdes.String(), Serdes.String())
+            );
+
+            KStream<String, ProcessingResult>[] validatorBranchedStreams = Validator.process(sourceStream);
+            KStream<String, ProcessingResult> validatorSuccessStream = validatorBranchedStreams[0];
+            KStream<String, ProcessingResult> validatorFailureStream = validatorBranchedStreams[1];
+
+            KStream<String, ProcessingResult>[] canonicalizerBranchedStreams = Canonicalizer.process(validatorSuccessStream);
+            KStream<String, ProcessingResult> canonicalizerSuccessStream = canonicalizerBranchedStreams[0];
+            KStream<String, ProcessingResult> canonicalizerFailureStream = canonicalizerBranchedStreams[1];
+
+            KStream<String, ProcessingResult> partitionBalancerBranchedStream = PartitionBalancer.process(canonicalizerSuccessStream);
+
+            // Sink to topic-specific output
+            // Now we pass the inputTopic instead of directly computing the output topic
+            sinkEvents(partitionBalancerBranchedStream, inputTopic);
+
+            // Collect all failure streams to process together
+            allFailedStreams.add(validatorFailureStream);
+            allFailedStreams.add(canonicalizerFailureStream);
+        }
+
+        // Process all failed streams to the common failed topic
+        processFailedStreams(allFailedStreams.toArray(new KStream[0]));
     }
 
-    private static void sinkEvents(KStream<String, ProcessingResult> stream) {
-        String topic = PreProcessorConfig.outputTopic;
+    private static void sinkEvents(KStream<String, ProcessingResult> stream, String inputTopic) {
+        // First branch by whether we have a canonicalEvent with table name in metadata
+        KStream<String, ProcessingResult>[] branchedStreams = stream.branch(
+            // First branch: Records with canonicalEvent in metadata that has a table name
+            (key, value) -> {
+                if (value.getMetadata() != null && value.getMetadata().containsKey("canonicalEvent")) {
+                    Object canonicalEventObj = value.getMetadata().get("canonicalEvent");
+                    if (canonicalEventObj instanceof CanonicalEvent) {
+                        CanonicalEvent event = (CanonicalEvent) canonicalEventObj;
+                        return event.getTableName() != null && !event.getTableName().isEmpty();
+                    }
+                }
+                return false;
+            },
+            // Second branch: Records without table name
+            (key, value) -> true  // All remaining records
+        );
 
-        stream
-                .mapValues(ProcessingResult::getPayload)
-                .peek((key, value) -> logger.debug("[Success Branch] Key: {}, Value: {}", key, value))
-                .to(topic, Produced.with(Serdes.String(), Serdes.String()));
+        // Process records with table name - use the table name for output topic
+        branchedStreams[0]
+            .selectKey((key, value) -> {
+                // Extract the canonicalEvent from metadata to use in the topic selector
+                CanonicalEvent event = (CanonicalEvent) value.getMetadata().get("canonicalEvent");
+                return event.getTableName(); // Store table name as key for use by the topic selector
+            })
+            .mapValues(ProcessingResult::getPayload)
+            .to((key, value, recordContext) -> {
+                try {
+                    // Use the key (which now contains the table name) to determine the output topic
+                    String tableName = key;
+                    String outputTopic = tableName + PreProcessorConfig.outputSuffix;
+                    logger.debug("[Table-Based Routing] Routing to topic: {}", outputTopic);
+                    return outputTopic;
+                } catch (Exception e) {
+                    logger.error("Error determining output topic, falling back to default: {}", e.getMessage());
+                    return PreProcessorConfig.getOutputTopicForInput(inputTopic);
+                }
+            }, Produced.with(Serdes.String(), Serdes.String()));
+
+        // Process records without table name - use the default inputTopic+suffix
+        String defaultOutputTopic = PreProcessorConfig.getOutputTopicForInput(inputTopic);
+        branchedStreams[1]
+            .mapValues(ProcessingResult::getPayload)
+            .peek((key, value) -> logger.debug("[Default Routing] Key: {}, Value: {}, Topic: {}", key, value, defaultOutputTopic))
+            .to(defaultOutputTopic, Produced.with(Serdes.String(), Serdes.String()));
     }
 
     private static void processFailedStreams(KStream<String, ProcessingResult>[] streams) {
@@ -155,8 +211,7 @@ public class PreprocessorTask {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             logger.info("Shutdown hook triggered - gracefully shutting down application...");
             try {
-                // Request closing of streams
-                streams.close(Duration.ofMinutes(5)); // Increased timeout to 5 minutes
+                streams.close(Duration.ofMinutes(2));
                 logger.info("Kafka Streams application shut down successfully");
             } catch (Exception e) {
                 logger.error("Error during shutdown: {}", e.getMessage(), e);

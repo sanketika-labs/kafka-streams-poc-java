@@ -25,19 +25,19 @@ public class CanonicalEvent {
         this.pipeline_meta = pipeline_meta;
     }
 
-    public String getTable_name() {
+    public String getTableName() {
         return table_name;
     }
 
-    public void setTable_name(String table_name) {
+    public void setTableName(String table_name) {
         this.table_name = table_name;
     }
 
-    public Map<String, Object> getCdc_meta() {
+    public Map<String, Object> getCdcMeta() {
         return cdc_meta;
     }
 
-    public void setCdc_meta(Map<String, Object> cdc_meta) {
+    public void setCdcMeta(Map<String, Object> cdc_meta) {
         this.cdc_meta = cdc_meta;
     }
 
@@ -49,11 +49,11 @@ public class CanonicalEvent {
         this.payload = payload;
     }
 
-    public PipelineMeta getPipeline_meta() {
+    public PipelineMeta getPipelineMeta() {
         return pipeline_meta;
     }
 
-    public void setPipeline_meta(PipelineMeta pipeline_meta) {
+    public void setPipelineMeta(PipelineMeta pipeline_meta) {
         this.pipeline_meta = pipeline_meta;
     }
 }
