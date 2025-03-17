@@ -8,10 +8,13 @@ import com.sanketika.common.models.ProcessingResult;
 import com.sanketika.common.util.JsonUtil;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
 public class PartitionBalancer {
+    private static final Logger logger = LoggerFactory.getLogger(PartitionBalancer.class);
 
     public static String mapKey(String key, ProcessingResult record) {
         if (record.getMetadata() == null) {
@@ -51,7 +54,7 @@ public class PartitionBalancer {
                 return new ProcessingResult(record.getPayload(), false, errorEvent);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error in partition balancer: {}", e.getMessage(), e);
             ErrorEvent errorEvent = new ErrorEvent(record.getPayload(), ErrorConstants.PARTITION_BALANCER_FAILED);
             return new ProcessingResult(record.getPayload(), false, errorEvent);
         }

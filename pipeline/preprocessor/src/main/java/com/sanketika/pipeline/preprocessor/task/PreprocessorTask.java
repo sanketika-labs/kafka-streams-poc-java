@@ -3,6 +3,7 @@ package com.sanketika.pipeline.preprocessor.task;
 import com.sanketika.common.models.ErrorEvent;
 import com.sanketika.common.models.ProcessingResult;
 import com.sanketika.common.util.JsonUtil;
+import com.sanketika.common.util.LogbackConfigurer;
 import com.sanketika.pipeline.preprocessor.functions.Canonicalizer;
 import com.sanketika.pipeline.preprocessor.functions.PartitionBalancer;
 import com.sanketika.pipeline.preprocessor.functions.Validator;
@@ -14,13 +15,28 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Properties;
 
 public class PreprocessorTask {
+    private static final Logger logger = LoggerFactory.getLogger(PreprocessorTask.class);
 
     public static void main(String[] args) {
+        // First make sure we see something with System.out
+        System.out.println("Starting PreprocessorTask...");
+
+        // Configure Logback
+        LogbackConfigurer.configureLogback();
+
+        // Test logging immediately after configuration
+        // System.out.println("Testing logs after Logback configuration...");
+        // logger.info("TEST INFO LOG - If you see this, logging is working");
+        // logger.debug("TEST DEBUG LOG - If you see this, debug logging is enabled");
+        // logger.error("TEST ERROR LOG - Should always be visible");
+
         try {
             Properties props = createKafkaProperties();
             StreamsBuilder builder = new StreamsBuilder();
@@ -31,13 +47,12 @@ public class PreprocessorTask {
 
             // Clean up state on shutdown
             streams.setStateListener((newState, oldState) -> {
-                System.out.println("Kafka Streams state changed from " + oldState + " to " + newState);
+                logger.info("Kafka Streams state changed from {} to {}", oldState, newState);
             });
 
             // Handle uncaught exceptions
             streams.setUncaughtExceptionHandler((thread, throwable) -> {
-                System.err.println("Uncaught exception in Kafka Streams thread " + thread + ": " + throwable.getMessage());
-                throwable.printStackTrace();
+                logger.error("Uncaught exception in Kafka Streams thread {}: {}", thread, throwable.getMessage(), throwable);
             });
 
             // Setup shutdown hook
@@ -46,21 +61,14 @@ public class PreprocessorTask {
             try {
                 streams.cleanUp(); // Clean local state stores before starting
                 streams.start();
-                System.out.println("Kafka Streams application started, listening for messages on topic: " + PreProcessorConfig.inputTopic);
-
-                // Keep application running indefinitely
-                // No need to wait on a latch - the application will continue to run
-                // The main thread will stay alive as long as non-daemon threads (like those in Kafka Streams) are running
-
+                logger.info("Kafka Streams application started, listening for messages on topic: {}", PreProcessorConfig.inputTopic);
             } catch (Exception e) {
-                System.err.println("Error during streams execution: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("Error during streams execution: {}", e.getMessage(), e);
                 streams.close(Duration.ofMinutes(1));
             }
 
         } catch (Exception e) {
-            System.err.println("Failed to start Kafka Streams application: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Failed to start Kafka Streams application: {}", e.getMessage(), e);
             System.exit(1);
         }
     }
@@ -85,7 +93,7 @@ public class PreprocessorTask {
         // For debugging
         props.put(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, 0); // Disable caching
 
-        System.out.println("Kafka configuration: " + props);
+        logger.debug("Kafka configuration: {}", props);
 
         return props;
     }
@@ -98,15 +106,6 @@ public class PreprocessorTask {
             inputTopic,
             Consumed.with(Serdes.String(), Serdes.String())
         );
-
-        // Add logging for consumed messages
-//        sourceStream = sourceStream.peek((key, value) -> {
-//            System.out.println("=========================================================");
-//            System.out.println("[INPUT MESSAGE] Topic: " + inputTopic);
-//            System.out.println("[INPUT MESSAGE] Key: " + key);
-//            System.out.println("[INPUT MESSAGE] Value: " + value);
-//            System.out.println("=========================================================");
-//        });
 
         KStream<String, ProcessingResult>[] validatorBranchedStreams = Validator.process(sourceStream);
         KStream<String, ProcessingResult> validatorSuccessStream = validatorBranchedStreams[0];
@@ -122,10 +121,10 @@ public class PreprocessorTask {
         processFailedStreams(new KStream[]{validatorFailureStream, canonicalizerFailureStream});
 
         // Log topology for debugging
-        System.out.println("Built the following topology:");
-        System.out.println("Input topic: " + inputTopic);
-        System.out.println("Output topic: " + PreProcessorConfig.outputTopic);
-        System.out.println("Failed topic: " + PreProcessorConfig.failedTopic);
+        logger.info("Built the following topology:");
+        logger.info("Input topic: {}", inputTopic);
+        logger.info("Output topic: {}", PreProcessorConfig.outputTopic);
+        logger.info("Failed topic: {}", PreProcessorConfig.failedTopic);
     }
 
     private static void sinkEvents(KStream<String, ProcessingResult> stream) {
@@ -133,7 +132,7 @@ public class PreprocessorTask {
 
         stream
                 .mapValues(ProcessingResult::getPayload)
-                .peek((key, value) -> System.out.println("[Success Branch] Key: " + key + ", Value: " + value))
+                .peek((key, value) -> logger.debug("[Success Branch] Key: {}, Value: {}", key, value))
                 .to(topic, Produced.with(Serdes.String(), Serdes.String()));
     }
 
@@ -147,21 +146,20 @@ public class PreprocessorTask {
                         JsonUtil.Either<Throwable, String> serializedError = JsonUtil.serialize(result.getError());
                         return serializedError.getOrElse("");
                     })
-                    .peek((key, value) -> System.out.println("[Failed Branch] Key: " + key + ", Value: " + value))
+                    .peek((key, value) -> logger.debug("[Failed Branch] Key: {}, Value: {}", key, value))
                     .to(topic, Produced.with(Serdes.String(), Serdes.String()));
         }
     }
 
     private static void setupShutdownHook(KafkaStreams streams) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Shutdown hook triggered - gracefully shutting down application...");
+            logger.info("Shutdown hook triggered - gracefully shutting down application...");
             try {
                 // Request closing of streams
                 streams.close(Duration.ofMinutes(5)); // Increased timeout to 5 minutes
-                System.out.println("Kafka Streams application shut down successfully");
+                logger.info("Kafka Streams application shut down successfully");
             } catch (Exception e) {
-                System.err.println("Error during shutdown: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("Error during shutdown: {}", e.getMessage(), e);
             }
         }));
     }

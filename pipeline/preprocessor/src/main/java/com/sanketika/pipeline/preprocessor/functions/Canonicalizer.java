@@ -7,11 +7,14 @@ import com.sanketika.common.models.ProcessingResult;
 import com.sanketika.common.util.CommonUtil;
 import com.sanketika.common.util.JsonUtil;
 import org.apache.kafka.streams.kstream.KStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class Canonicalizer {
+    private static final Logger logger = LoggerFactory.getLogger(Canonicalizer.class);
 
     private static Map.Entry<Map<String, Object>, Map<String, Object>> splitCdcMetaAndPayload(Map<String, Object> event, String operationType) {
         Map<String, Object> input = event;
@@ -58,7 +61,7 @@ public class Canonicalizer {
 
             return new ProcessingResult(record.getPayload(), true, null, metadata);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error transforming event: {}", e.getMessage(), e);
             ErrorEvent failedEvent = new ErrorEvent(record.getPayload(), ErrorConstants.TRANSFORMATION_FAILED);
             return new ProcessingResult(record.getPayload(), false, failedEvent);
         }

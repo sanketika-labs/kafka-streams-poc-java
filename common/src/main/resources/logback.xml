@@ -1,0 +1,23 @@
+<configuration>
+    <!-- Enable internal logback debugging -->
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+        <target>System.out</target> <!-- Make sure we print to stdout -->
+    </appender>
+
+    <!-- Configure log levels - force DEBUG level for our code -->
+    <logger name="com.sanketika" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- For development, you might want to see more Kafka logs -->
+    <logger name="org.apache.kafka" level="WARN" />
+
+    <!-- Root logger - only console appender -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration>

@@ -3,7 +3,10 @@ package com.sanketika.pipeline.preprocessor.task;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
 import com.typesafe.config.ConfigFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,6 +18,7 @@ import java.util.stream.StreamSupport;
  * Centralized configuration for the Kafka Streams pipeline
  */
 public class PreProcessorConfig {
+    private static final Logger logger = LoggerFactory.getLogger(PreProcessorConfig.class);
     private static final Config config = loadConfig();
 
     // Kafka configuration
@@ -41,7 +45,7 @@ public class PreProcessorConfig {
 
     public static Map<String, String> getAllSchemaPaths() {
         if (schemaKeys.isEmpty()) {
-            System.err.println("Warning: No schemas configured");
+            logger.warn("No schemas configured");
             return Collections.emptyMap();
         } else {
             Map<String, String> result = new HashMap<>();
@@ -76,10 +80,25 @@ public class PreProcessorConfig {
 
     private static Config loadConfig() {
         try {
+            // Try to load from external file first
+            File externalConfig = new File("/data/conf/preprocessor.conf");
+            if (externalConfig.exists() && externalConfig.canRead()) {
+                logger.info("Loading configuration from external file: {}", externalConfig.getAbsolutePath());
+                return ConfigFactory.parseFile(externalConfig).resolve();
+            }
+
+            // Then try classpath
+            logger.info("Loading configuration from classpath: preprocessor.conf");
+            Config classpathConfig = ConfigFactory.parseResources("preprocessor.conf");
+            if (!classpathConfig.isEmpty()) {
+                return classpathConfig.resolve();
+            }
+
+            // Finally, fall back to application.conf (backward compatibility)
+            logger.info("Falling back to application.conf in classpath");
             return ConfigFactory.load();
         } catch (Exception e) {
-            System.err.println("Fatal error: Failed to load application.conf: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Fatal error: Failed to load configuration: {}", e.getMessage(), e);
             throw new RuntimeException("Application cannot start without valid configuration", e);
         }
     }

@@ -1,9 +1,13 @@
 package com.sanketika.common.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 import java.util.function.BiConsumer;
 
 public class CommonUtil {
+    private static final Logger logger = LoggerFactory.getLogger(CommonUtil.class);
 
     private CommonUtil() {
         // Prevent instantiation
@@ -32,7 +36,7 @@ public class CommonUtil {
 
     public static BiConsumer<String, String> peek(String result) {
         return (key, value) -> {
-            System.out.println("[" + result + " Branch] Key: " + key + ", Value: " + value);
+            logger.debug("[{} Branch] Key: {}, Value: {}", result, key, value);
         };
     }
 }

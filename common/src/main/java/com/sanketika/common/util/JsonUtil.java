@@ -2,12 +2,15 @@ package com.sanketika.common.util;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class JsonUtil {
 
+    private static final Logger logger = LoggerFactory.getLogger(JsonUtil.class);
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private JsonUtil() {
@@ -19,7 +22,7 @@ public class JsonUtil {
         try {
             return mapper.readValue(jsonString, Map.class);
         } catch (Exception e) {
-            System.out.println("Error deserializing JSON: " + e);
+            logger.error("Error deserializing JSON: {}", e.getMessage());
             return new HashMap<>(); // Return empty map on failure
         }
     }
@@ -28,7 +31,7 @@ public class JsonUtil {
         try {
             return new Either.Right<>(mapper.writeValueAsString(obj));
         } catch (JsonProcessingException e) {
-            System.out.println("Error serializing JSON: " + e.getMessage());
+            logger.error("Error serializing JSON: {}", e.getMessage());
             return new Either.Left<>(e);
         }
     }
